@@ -1,0 +1,16 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/InventoryService/InventoryService.csproj" />
+    <Project Path="src/NotificationService/NotificationService.csproj" />
+    <Project Path="src/OrderService/OrderService.csproj" />
+    <Project Path="src/PaymentService/PaymentService.csproj" />
+    <Project Path="src/WorkflowOrchestrator/WorkflowOrchestrator.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Integration.Tests/Integration.Tests.csproj" />
+    <Project Path="tests/InventoryService.Tests/InventoryService.Tests.csproj" />
+    <Project Path="tests/NotificationService.Tests/NotificationService.Tests.csproj" />
+    <Project Path="tests/OrderService.Tests/OrderService.Tests.csproj" />
+    <Project Path="tests/PaymentService.Tests/PaymentService.Tests.csproj" />
+  </Folder>
+</Solution>

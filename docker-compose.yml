@@ -1,0 +1,301 @@
+networks:
+  dapr-network:
+    driver: bridge
+
+services:
+
+  # ── Infrastructure ──────────────────────────────────────────────────────────
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    networks:
+      - dapr-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  zipkin:
+    image: openzipkin/zipkin:latest
+    ports:
+      - "9411:9411"
+    networks:
+      - dapr-network
+
+  # ── Dapr Placement (required for Workflow / Actors) ────────────────────────
+
+  dapr-placement:
+    image: daprio/dapr:1.14.4
+    command: ["./placement", "-port", "50006", "-log-level", "warn"]
+    ports:
+      - "50006:50006"
+    networks:
+      - dapr-network
+
+  # ── OrderService ────────────────────────────────────────────────────────────
+
+  order-service:
+    build:
+      context: .
+      dockerfile: src/OrderService/Dockerfile
+    ports:
+      - "5001:5001"
+    environment:
+      - ASPNETCORE_URLS=http://+:5001
+      - DAPR_HTTP_PORT=3501
+      - DAPR_GRPC_PORT=50001
+    volumes:
+      - ./components:/components
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - dapr-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  order-service-dapr:
+    image: daprio/daprd:1.14.4
+    command:
+      - "./daprd"
+      - "-app-id"
+      - "order-service"
+      - "-app-port"
+      - "5001"
+      - "-dapr-http-port"
+      - "3501"
+      - "-dapr-grpc-port"
+      - "50001"
+      - "-placement-host-address"
+      - "dapr-placement:50006"
+      - "-components-path"
+      - "/components"
+      - "-config"
+      - "/components/zipkin.yaml"
+    volumes:
+      - ./components:/components
+    network_mode: "service:order-service"
+    depends_on:
+      - order-service
+      - redis
+      - zipkin
+      - dapr-placement
+
+  # ── InventoryService ────────────────────────────────────────────────────────
+
+  inventory-service:
+    build:
+      context: .
+      dockerfile: src/InventoryService/Dockerfile
+    ports:
+      - "5002:5002"
+    environment:
+      - ASPNETCORE_URLS=http://+:5002
+      - DAPR_HTTP_PORT=3502
+      - DAPR_GRPC_PORT=50002
+    volumes:
+      - ./components:/components
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - dapr-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  inventory-service-dapr:
+    image: daprio/daprd:1.14.4
+    command:
+      - "./daprd"
+      - "-app-id"
+      - "inventory-service"
+      - "-app-port"
+      - "5002"
+      - "-dapr-http-port"
+      - "3502"
+      - "-dapr-grpc-port"
+      - "50002"
+      - "-placement-host-address"
+      - "dapr-placement:50006"
+      - "-components-path"
+      - "/components"
+      - "-config"
+      - "/components/zipkin.yaml"
+    volumes:
+      - ./components:/components
+    network_mode: "service:inventory-service"
+    depends_on:
+      - inventory-service
+      - redis
+      - zipkin
+      - dapr-placement
+
+  # ── PaymentService ──────────────────────────────────────────────────────────
+
+  payment-service:
+    build:
+      context: .
+      dockerfile: src/PaymentService/Dockerfile
+    ports:
+      - "5003:5003"
+    environment:
+      - ASPNETCORE_URLS=http://+:5003
+      - DAPR_HTTP_PORT=3503
+      - DAPR_GRPC_PORT=50003
+    volumes:
+      - ./components:/components
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - dapr-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5003/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  payment-service-dapr:
+    image: daprio/daprd:1.14.4
+    command:
+      - "./daprd"
+      - "-app-id"
+      - "payment-service"
+      - "-app-port"
+      - "5003"
+      - "-dapr-http-port"
+      - "3503"
+      - "-dapr-grpc-port"
+      - "50003"
+      - "-placement-host-address"
+      - "dapr-placement:50006"
+      - "-components-path"
+      - "/components"
+      - "-config"
+      - "/components/zipkin.yaml"
+    volumes:
+      - ./components:/components
+    network_mode: "service:payment-service"
+    depends_on:
+      - payment-service
+      - redis
+      - zipkin
+      - dapr-placement
+
+  # ── NotificationService ─────────────────────────────────────────────────────
+
+  notification-service:
+    build:
+      context: .
+      dockerfile: src/NotificationService/Dockerfile
+    ports:
+      - "5004:5004"
+    environment:
+      - ASPNETCORE_URLS=http://+:5004
+      - DAPR_HTTP_PORT=3504
+      - DAPR_GRPC_PORT=50004
+    volumes:
+      - ./components:/components
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - dapr-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5004/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  notification-service-dapr:
+    image: daprio/daprd:1.14.4
+    command:
+      - "./daprd"
+      - "-app-id"
+      - "notification-service"
+      - "-app-port"
+      - "5004"
+      - "-dapr-http-port"
+      - "3504"
+      - "-dapr-grpc-port"
+      - "50004"
+      - "-placement-host-address"
+      - "dapr-placement:50006"
+      - "-components-path"
+      - "/components"
+      - "-config"
+      - "/components/zipkin.yaml"
+    volumes:
+      - ./components:/components
+    network_mode: "service:notification-service"
+    depends_on:
+      - notification-service
+      - redis
+      - zipkin
+      - dapr-placement
+
+  # ── WorkflowOrchestrator ────────────────────────────────────────────────────
+
+  workflow-orchestrator:
+    build:
+      context: .
+      dockerfile: src/WorkflowOrchestrator/Dockerfile
+    ports:
+      - "5005:5005"
+    environment:
+      - ASPNETCORE_URLS=http://+:5005
+      - DAPR_HTTP_PORT=3505
+      - DAPR_GRPC_PORT=50005
+    volumes:
+      - ./components:/components
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - dapr-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5005/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  workflow-orchestrator-dapr:
+    image: daprio/daprd:1.14.4
+    command:
+      - "./daprd"
+      - "-app-id"
+      - "workflow-orchestrator"
+      - "-app-port"
+      - "5005"
+      - "-dapr-http-port"
+      - "3505"
+      - "-dapr-grpc-port"
+      - "50005"
+      - "-placement-host-address"
+      - "dapr-placement:50006"
+      - "-components-path"
+      - "/components"
+      - "-config"
+      - "/components/zipkin.yaml"
+    volumes:
+      - ./components:/components
+    network_mode: "service:workflow-orchestrator"
+    depends_on:
+      - workflow-orchestrator
+      - redis
+      - zipkin
+      - dapr-placement

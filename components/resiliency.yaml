@@ -1,0 +1,27 @@
+apiVersion: dapr.io/v1alpha1
+kind: Resiliency
+metadata:
+  name: resiliency
+scopes:
+  - order-service
+spec:
+  policies:
+    retries:
+      retryThreeTimes:
+        policy: exponential
+        maxRetries: 3
+        maxInterval: 10s
+    circuitBreakers:
+      simpleCB:
+        maxRequests: 1
+        interval: 10s
+        timeout: 30s
+        trip: consecutiveFailures >= 5
+    timeouts:
+      general: 5s
+  targets:
+    apps:
+      inventory-service:
+        retry: retryThreeTimes
+        circuitBreaker: simpleCB
+        timeout: general

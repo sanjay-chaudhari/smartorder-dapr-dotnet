@@ -1,0 +1,64 @@
+# ── .NET build outputs ────────────────────────────────────────────────────────
+bin/
+obj/
+out/
+
+# ── NuGet ─────────────────────────────────────────────────────────────────────
+*.nupkg
+*.snupkg
+.nuget/
+packages/
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+# ── Test results & coverage ───────────────────────────────────────────────────
+TestResults/
+coverage/
+*.trx
+*.coveragexml
+*.coverage
+lcov.info
+
+# ── Rider / JetBrains ─────────────────────────────────────────────────────────
+.idea/
+*.sln.iml
+
+# ── Visual Studio ─────────────────────────────────────────────────────────────
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.VC.db
+*.VC.opendb
+
+# ── VS Code ───────────────────────────────────────────────────────────────────
+.vscode/
+!.vscode/extensions.json
+!.vscode/launch.json
+!.vscode/tasks.json
+
+
+# ── macOS ─────────────────────────────────────────────────────────────────────
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+
+# ── Docker ────────────────────────────────────────────────────────────────────
+# Keep docker-compose.yml but ignore local overrides
+docker-compose.override.yml
+docker-compose.local.yml
+
+# ── Secrets — never commit real secrets ───────────────────────────────────────
+# The checked-in secrets.json contains only local dev placeholder values.
+# Uncomment the line below if you add real secrets to this file:
+# components/secrets.json
+
+# ── Logs ──────────────────────────────────────────────────────────────────────
+*.log
+logs/
+
+# ── Publish output ────────────────────────────────────────────────────────────
+publish/
