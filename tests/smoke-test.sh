@@ -131,6 +131,39 @@ status=$(echo "$resp" | tail -1)
 assert_status "POST /inventory/reserve insufficient stock" "422" "$status"
 assert_contains "POST /inventory/reserve insufficient stock returns success:false" '"success":false' "$body"
 
+# ─── Inventory Actor Endpoints ────────────────────────────────────────────────
+section "Inventory Service — Virtual Actors"
+
+# Seed actor state via the actor seed endpoint (PUT /inventory/actor/{productId}/stock)
+status=$(curl -s -o /dev/null -w "%{http_code}" -X PUT "$INVENTORY_SVC/inventory/actor/prod-actor-001/stock" \
+  -H "Content-Type: application/json" \
+  -d '{"productId":"prod-actor-001","availableQuantity":50,"reservedQuantity":0}')
+assert_status "Actor inventory seeded (prod-actor-001, qty=50)" "200" "$status"
+
+# Reserve via actor
+resp=$(curl -s -w "\n%{http_code}" -X POST "$INVENTORY_SVC/inventory/actor/reserve" \
+  -H "Content-Type: application/json" \
+  -d '{"productId":"prod-actor-001","quantity":5,"orderId":"smoke-actor-order-1"}')
+body=$(echo "$resp" | head -1)
+status=$(echo "$resp" | tail -1)
+assert_status "POST /inventory/actor/reserve valid" "200" "$status"
+assert_contains "POST /inventory/actor/reserve returns success" '"success"' "$body"
+
+# Get stock via actor
+resp=$(curl -s -w "\n%{http_code}" "$INVENTORY_SVC/inventory/actor/prod-actor-001/stock")
+body=$(echo "$resp" | head -1)
+status=$(echo "$resp" | tail -1)
+assert_status "GET /inventory/actor/{productId}/stock" "200" "$status"
+assert_contains "GET /inventory/actor stock returns productId" '"productId"' "$body"
+
+# Release via actor
+resp=$(curl -s -w "\n%{http_code}" -X POST "$INVENTORY_SVC/inventory/actor/release" \
+  -H "Content-Type: application/json" \
+  -d '{"productId":"prod-actor-001","quantity":5,"orderId":"smoke-actor-order-1"}')
+body=$(echo "$resp" | head -1)
+status=$(echo "$resp" | tail -1)
+assert_status "POST /inventory/actor/release valid" "200" "$status"
+
 # ─── Payment Service ──────────────────────────────────────────────────────────
 section "Payment Service — POST /payments/process"
 
@@ -197,6 +230,19 @@ if [[ "$status" == "404" || "$status" == "500" || "$status" == "200" ]]; then
   pass "GET /workflow/orders/{nonexistent} handled ($status)"
 else
   fail "GET /workflow/orders/{nonexistent}" "unexpected status $status"
+fi
+
+# ─── Output Binding ───────────────────────────────────────────────────────────
+section "Order Service — Output Binding (Webhook)"
+
+if [[ -n "$ORDER_ID" ]]; then
+  resp=$(curl -s -w "\n%{http_code}" -X POST "$ORDER_SVC/orders/$ORDER_ID/notify-webhook")
+  body=$(echo "$resp" | head -1)
+  status=$(echo "$resp" | tail -1)
+  assert_status "POST /orders/{id}/notify-webhook" "200" "$status"
+  assert_contains "Webhook response contains webhookSent" '"webhookSent"' "$body"
+else
+  fail "POST /orders/{id}/notify-webhook" "no orderId captured"
 fi
 
 # ─── Summary ──────────────────────────────────────────────────────────────────

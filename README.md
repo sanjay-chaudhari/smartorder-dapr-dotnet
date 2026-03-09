@@ -267,7 +267,96 @@ Applied to: `order-service` → `inventory-service` calls
 
 ---
 
-### 8. Observability (Distributed Tracing)
+### 8. Virtual Actors
+
+Dapr Virtual Actors provide single-threaded, per-entity state management. One `OrderActor` instance per product ID — the runtime serializes all calls to the same actor, eliminating the need for ETag retry loops on inventory operations.
+
+```csharp
+// IOrderActor — one instance per productId
+public interface IOrderActor : IActor
+{
+    Task<ReserveInventoryResponse> ReserveAsync(ReserveInventoryRequest request, CancellationToken cancellationToken);
+    Task<ReleaseInventoryResponse> ReleaseAsync(ReleaseInventoryRequest request, CancellationToken cancellationToken);
+    Task<InventoryItem?> GetStockAsync(CancellationToken cancellationToken);
+}
+
+// Calling the actor — ActorId = productId
+var actor = ActorProxy.Create<IOrderActor>(new ActorId(productId), nameof(OrderActor));
+var result = await actor.ReserveAsync(request, cancellationToken);
+```
+
+Actor state is persisted automatically by the Dapr runtime via the state store (`actorStateStore: true` in `statestore.yaml`).
+
+Actor endpoints: `POST /inventory/actor/reserve`, `POST /inventory/actor/release`, `GET /inventory/actor/{productId}/stock`
+
+Where it's used: `src/InventoryService/Actors/`
+
+---
+
+### 9. Bindings (Input + Output)
+
+**Input binding** — Dapr cron binding fires `POST /order-cleanup-cron` on `order-service` every 5 minutes. No polling loop, no scheduler library — just a YAML component and an endpoint.
+
+```yaml
+# components/cron.yaml
+spec:
+  type: bindings.cron
+  metadata:
+    - name: schedule
+      value: "@every 5m"
+```
+
+```csharp
+// Dapr calls this endpoint on schedule
+app.MapPost("/order-cleanup-cron", async (...) =>
+{
+    logger.LogInformation("Cron binding triggered: starting stale order cleanup...");
+    // scan for stale Pending orders and mark them Failed
+    return Results.Ok();
+});
+```
+
+**Output binding** — sends an HTTP webhook via the `order-webhook` binding when an order is confirmed. Swap the component YAML to target AWS SNS/EventBridge in production without changing any code.
+
+```csharp
+await daprClient.InvokeBindingAsync(
+    "order-webhook",   // component name
+    "create",          // operation
+    new { orderId, status = "confirmed", timestamp = DateTimeOffset.UtcNow },
+    cancellationToken: cancellationToken);
+```
+
+Where it's used: `src/OrderService/Endpoints/BindingEndpoints.cs`, `components/cron.yaml`, `components/http-output-binding.yaml`
+
+---
+
+### 10. gRPC Service Invocation
+
+The conventions require demonstrating both HTTP and gRPC invocation modes. `GrpcInventoryClient` uses `HttpMethod.Post` with Dapr's gRPC transport to call `inventory-service` — same interface as the HTTP client, switchable via config.
+
+```csharp
+// GrpcInventoryClient — gRPC mode
+return await _daprClient.InvokeMethodAsync<ReserveInventoryRequest, ReserveInventoryResponse>(
+    HttpMethod.Post,
+    "inventory-service",
+    "inventory/reserve",
+    request,
+    cancellationToken);
+```
+
+Switch between HTTP and gRPC by setting `"InventoryClient": "grpc"` in `appsettings.json`:
+
+```json
+{ "InventoryClient": "grpc" }
+```
+
+Default is HTTP (`DaprInventoryClient`). Both implement `IInventoryClient` — no other code changes needed.
+
+Where it's used: `src/OrderService/Services/GrpcInventoryClient.cs`
+
+---
+
+### 11. Observability (Distributed Tracing)
 
 W3C trace context propagated automatically across all services via Dapr. Traces exported to Zipkin.
 
@@ -385,6 +474,8 @@ docker compose down
 |---|---|---|
 | POST | `/orders` | Create an order |
 | GET | `/orders/{orderId}` | Get order by ID |
+| POST | `/orders/{orderId}/notify-webhook` | Send order-confirmed webhook (output binding) |
+| POST | `/order-cleanup-cron` | Cron input binding handler (Dapr-managed) |
 | GET | `/health` | Health check |
 
 **POST /orders body:**
@@ -398,8 +489,11 @@ Validation rules: quantity ≥ 1, price > 0, quantity ≤ 100 (configurable via 
 
 | Method | Path | Description |
 |---|---|---|
-| POST | `/inventory/reserve` | Reserve stock |
-| POST | `/inventory/release` | Release reserved stock |
+| POST | `/inventory/reserve` | Reserve stock (direct state) |
+| POST | `/inventory/release` | Release reserved stock (direct state) |
+| POST | `/inventory/actor/reserve` | Reserve stock via Virtual Actor |
+| POST | `/inventory/actor/release` | Release stock via Virtual Actor |
+| GET | `/inventory/actor/{productId}/stock` | Get stock level via actor |
 | GET | `/health` | Health check |
 
 ### payment-service (port 5003)
@@ -433,8 +527,9 @@ Validation rules: quantity ≥ 1, price > 0, quantity ≤ 100 (configurable via 
 ```
 SmartOrder/
 ├── src/
-│   ├── OrderService/           # Order creation, state, pub/sub, config
-│   ├── InventoryService/       # Stock management with ETags
+│   ├── OrderService/           # Order creation, state, pub/sub, config, bindings
+│   ├── InventoryService/       # Stock management — direct state + Virtual Actors
+│   │   └── Actors/             # IOrderActor, OrderActor
 │   ├── PaymentService/         # Payment processing, secrets
 │   ├── NotificationService/    # Pub/sub subscriber + direct invocation
 │   └── WorkflowOrchestrator/   # Dapr Workflow saga + activities
@@ -444,12 +539,14 @@ SmartOrder/
 │   ├── PaymentService.Tests/
 │   ├── NotificationService.Tests/
 │   ├── Integration.Tests/      # Testcontainers integration tests
-│   └── smoke-test.sh           # Live API smoke test suite (29 tests)
+│   └── smoke-test.sh           # Live API smoke test suite
 ├── components/                 # Dapr component YAML files
-│   ├── statestore.yaml         # Redis state store
+│   ├── statestore.yaml         # Redis state store (actorStateStore: true)
 │   ├── pubsub.yaml             # Redis pub/sub
 │   ├── secretstore.yaml        # Local file secret store
 │   ├── resiliency.yaml         # Retry, circuit breaker, timeout policies
+│   ├── cron.yaml               # Cron input binding (every 5 min)
+│   ├── http-output-binding.yaml# HTTP output binding (webhook)
 │   ├── zipkin.yaml             # Distributed tracing config
 │   └── secrets.json            # Local dev secrets (never commit real secrets)
 └── docker-compose.yml          # Full stack: 5 apps + 5 sidecars + infra

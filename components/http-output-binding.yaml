@@ -1,0 +1,24 @@
+apiVersion: dapr.io/v1alpha1
+kind: Component
+metadata:
+  name: order-webhook
+spec:
+  type: bindings.http
+  version: v1
+  metadata:
+    # Webhook target — replace with real URL in production.
+    # In local dev this points to a mock echo endpoint (httpbin).
+    - name: url
+      value: "https://httpbin.org/post"
+scopes:
+  - order-service
+
+# Production variant (AWS EventBridge or SNS output binding):
+# spec:
+#   type: bindings.aws.sns
+#   version: v1
+#   metadata:
+#     - name: topicArn
+#       value: "arn:aws:sns:us-east-1:123456789012:order-events"
+#     - name: region
+#       value: "us-east-1"

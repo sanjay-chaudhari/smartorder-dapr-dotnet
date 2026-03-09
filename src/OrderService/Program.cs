@@ -21,6 +21,7 @@ var configService = app.Services.GetRequiredService<IConfigurationService>();
 await configService.InitializeAsync(app.Lifetime.ApplicationStopping);
 
 app.MapOrderEndpoints();
+app.MapBindingEndpoints();
 app.MapHealthChecks("/health");
 
 app.Run();

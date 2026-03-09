@@ -9,6 +9,7 @@
 
   <ItemGroup>
     <PackageReference Include="coverlet.collector" Version="6.0.4" />
+    <PackageReference Include="Dapr.Actors.AspNetCore" Version="1.17.1" />
     <PackageReference Include="FluentAssertions" Version="8.8.0" />
     <PackageReference Include="FsCheck.Xunit" Version="3.3.2" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />

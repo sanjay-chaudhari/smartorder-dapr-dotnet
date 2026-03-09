@@ -1,0 +1,13 @@
+apiVersion: dapr.io/v1alpha1
+kind: Component
+metadata:
+  name: order-cleanup-cron
+spec:
+  type: bindings.cron
+  version: v1
+  metadata:
+    # Fires every 5 minutes — triggers POST /orders/cleanup on order-service
+    - name: schedule
+      value: "@every 5m"
+scopes:
+  - order-service
