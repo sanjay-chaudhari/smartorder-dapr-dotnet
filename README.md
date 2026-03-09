@@ -11,42 +11,45 @@ A .NET 10 multi-microservice application demonstrating all major Dapr building b
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                        Client / API Consumer                    │
-└──────────────────────────┬──────────────────────────────────────┘
-                           │
-          ┌────────────────▼────────────────┐
-          │         order-service :5001      │
-          │  - Creates orders               │
-          │  - Validates via FluentValidation│
-          │  - Reads config (max qty, disc.) │
-          │  - Saves state to Redis          │
-          │  - Invokes inventory-service     │
-          │  - Publishes order-placed event  │
-          └──────┬──────────────────────────┘
-                 │ Dapr service invocation
-    ┌────────────▼────────────┐
-    │  inventory-service :5002 │
-    │  - Reserves/releases     │
-    │    stock in Redis        │
-    │  - ETag optimistic lock  │
-    └─────────────────────────┘
-
-          ┌──────────────────────────────────┐
-          │   workflow-orchestrator :5005     │
-          │  Saga: ValidateOrder →            │
-          │        ReserveInventory →         │
-          │        ProcessPayment →           │
-          │        SendNotification           │
-          │  Compensation on failure          │
-          └──┬──────────┬──────────┬─────────┘
-             │          │          │
-    ┌────────▼──┐ ┌─────▼────┐ ┌──▼──────────────┐
-    │ inventory │ │ payment  │ │ notification     │
-    │ :5002     │ │ :5003    │ │ :5004            │
-    └───────────┘ └──────────┘ └─────────────────┘
+└──────────┬──────────────────────────────────────────────────────┘
+           │ POST /orders                          │ POST /workflow/orders
+           │ GET  /orders/{id}                     │ GET  /workflow/orders/{id}
+           │ POST /orders/{id}/notify-webhook       │
+           ▼                                       ▼
+┌──────────────────────────┐         ┌──────────────────────────────┐
+│   order-service :5001    │         │  workflow-orchestrator :5005  │
+│  - Creates orders        │         │  Saga: ValidateOrder →        │
+│  - FluentValidation      │         │        ReserveInventory →     │
+│  - Config API (flags)    │         │        ProcessPayment →       │
+│  - State store (Redis)   │         │        SendNotification       │
+│  - Pub/Sub publisher     │         │  Compensation on failure      │
+│  - Service invocation    │         └──┬──────────┬──────────┬──────┘
+│    (HTTP + gRPC modes)   │            │          │          │
+│  - Cron input binding    │            │          │          │
+│  - HTTP output binding   │            ▼          ▼          ▼
+└──────────┬───────────────┘   ┌────────────┐ ┌────────┐ ┌──────────────┐
+           │ Dapr service      │ inventory  │ │payment │ │notification  │
+           │ invocation        │ :5002      │ │:5003   │ │:5004         │
+           ▼                   └────────────┘ └────────┘ └──────────────┘
+┌──────────────────────────┐
+│  inventory-service :5002 │
+│  - Direct state (ETag)   │
+│  - Virtual Actors        │
+│    (OrderActor/product)  │
+│  - Resiliency target     │
+└──────────────────────────┘
 
 Pub/Sub (Redis Streams):
   order-service ──► order-placed ──► payment-service
                                  └──► notification-service
+
+Bindings (order-service):
+  Dapr cron ──► POST /order-cleanup-cron   (input — every 5 min)
+  POST /orders/{id}/notify-webhook ──► order-webhook ──► HTTP endpoint (output)
+
+Virtual Actors (inventory-service):
+  ActorProxy.Create<IOrderActor>(productId) ──► OrderActor
+  Single-threaded per product — no ETag retry loops needed
 ```
 
 Each service runs with a **Dapr sidecar** (`daprd`) in the same network namespace. All inter-service communication goes through the sidecar — never direct HTTP.
@@ -444,7 +447,7 @@ curl http://localhost:5005/workflow/orders/{instanceId}
 bash tests/smoke-test.sh
 ```
 
-Runs 29 tests covering all APIs, validation rules, error cases, and the full saga end-to-end.
+Runs 37 tests covering all APIs, validation rules, error cases, virtual actors, bindings, and the full saga end-to-end.
 
 > Windows users: run this from WSL2 or Git Bash. The script requires bash and `curl`.
 
@@ -494,6 +497,7 @@ Validation rules: quantity ≥ 1, price > 0, quantity ≤ 100 (configurable via 
 | POST | `/inventory/actor/reserve` | Reserve stock via Virtual Actor |
 | POST | `/inventory/actor/release` | Release stock via Virtual Actor |
 | GET | `/inventory/actor/{productId}/stock` | Get stock level via actor |
+| PUT | `/inventory/actor/{productId}/stock` | Seed/set stock level via actor |
 | GET | `/health` | Health check |
 
 ### payment-service (port 5003)
